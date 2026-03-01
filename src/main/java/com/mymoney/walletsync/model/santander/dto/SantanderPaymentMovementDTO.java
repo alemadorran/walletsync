@@ -13,4 +13,5 @@ public record SantanderPaymentMovementDTO(
         String operationLabel,
         BigDecimal amount,
         BigDecimal balance
-) {}
+) {
+}

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Contenedor de Base de Datos
+  db:
+    image: postgres:15-alpine
+    container_name: walletsync-db
+    environment:
+      POSTGRES_DB: walletsync_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Tu aplicación Spring Boot
+  app:
+    build: .
+    container_name: walletsync-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Configuración dinámica para conectar con el servicio 'db'
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/walletsync_db
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: password123
+      # Recomendado para que Hibernate cree las tablas automáticamente (como santander_payment_movements)
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+
+# Levantar el container
+# docker-compose up --build -d
