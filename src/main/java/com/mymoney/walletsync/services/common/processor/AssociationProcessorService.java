@@ -3,6 +3,8 @@ package com.mymoney.walletsync.services.common.processor;
 import com.mymoney.walletsync.model.common.dto.CategoryDTO;
 import com.mymoney.walletsync.model.common.dto.MovementAssociationDTO;
 import com.mymoney.walletsync.model.common.enums.CategoryType;
+import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByMonthDTO;
+import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByYearDTO;
 import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentDTO;
 import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
 import com.mymoney.walletsync.services.common.CategoryService;
@@ -11,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Month;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -164,4 +167,37 @@ public class AssociationProcessorService {
     }
 
 
+    public AssociatedSantanderPaymentByYearDTO processByYear(List<SantanderPaymentMovementDTO> movements, Long year) {
+
+        List<AssociatedSantanderPaymentByMonthDTO> associatedSantanderPaymentByMonthDTOS = new ArrayList<>();
+
+        Month[] values = Month.values();
+
+        for(Month month : values) {
+
+            associatedSantanderPaymentByMonthDTOS.add(new AssociatedSantanderPaymentByMonthDTO(
+                    month.getValue(),
+                    getPaymentsByMonth(month, movements)
+            ));
+
+        }
+
+        return new AssociatedSantanderPaymentByYearDTO(
+                year,
+                associatedSantanderPaymentByMonthDTOS
+        );
+    }
+
+    private List<AssociatedSantanderPaymentDTO> getPaymentsByMonth(Month month, List<SantanderPaymentMovementDTO> movements) {
+
+        List<SantanderPaymentMovementDTO> movementsToProcess = new ArrayList<>();
+
+        for (SantanderPaymentMovementDTO santanderPaymentMovementDTO : movements) {
+            if(santanderPaymentMovementDTO.operationDate().getMonth().equals(month)) {
+                movementsToProcess.add(santanderPaymentMovementDTO);
+            }
+        }
+
+        return process(movementsToProcess);
+    }
 }

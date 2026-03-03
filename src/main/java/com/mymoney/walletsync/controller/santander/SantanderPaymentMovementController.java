@@ -1,7 +1,10 @@
 package com.mymoney.walletsync.controller.santander;
 
+import com.mymoney.walletsync.controller.common.BankController;
+import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByYearDTO;
 import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentDTO;
 import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
+import com.mymoney.walletsync.services.common.BankMovementService;
 import com.mymoney.walletsync.services.common.processor.AssociationProcessorService;
 import com.mymoney.walletsync.services.santander.SantanderPaymentMovementService;
 import lombok.RequiredArgsConstructor;
@@ -9,57 +12,62 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/payments/santander")
 @RequiredArgsConstructor
-public class SantanderPaymentMovementController {
+public class SantanderPaymentMovementController implements BankController<SantanderPaymentMovementDTO, AssociatedSantanderPaymentDTO, AssociatedSantanderPaymentByYearDTO> {
 
-    private final SantanderPaymentMovementService movementService;
+    private final BankMovementService<SantanderPaymentMovementDTO> santanderPaymentMovementService;
     private final AssociationProcessorService associationProcessorService;
 
-    @GetMapping("/inCategories")
-    public ResponseEntity<List<AssociatedSantanderPaymentDTO>> getAllMovements() {
-        List<SantanderPaymentMovementDTO> movements = movementService.findAll();
+    @Override
+    public ResponseEntity<List<AssociatedSantanderPaymentDTO>> getAllMovementsWithCategories() {
+        List<SantanderPaymentMovementDTO> movements = santanderPaymentMovementService.findAll();
         List<AssociatedSantanderPaymentDTO> result = associationProcessorService.process(movements);
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping
-    public ResponseEntity<List<SantanderPaymentMovementDTO>> getAllMovementsInCategories() {
-        List<SantanderPaymentMovementDTO> movements = movementService.findAll();
-
-        return ResponseEntity.ok(movements);
+    @Override
+    public ResponseEntity <AssociatedSantanderPaymentByYearDTO> getAllMovementsWithCategoriesByYear(Long year) {
+        List<SantanderPaymentMovementDTO> movements = santanderPaymentMovementService.findByYear(year);
+        if(movements.isEmpty()){
+            return ResponseEntity.ok(new AssociatedSantanderPaymentByYearDTO(year, Collections.emptyList()));
+        }
+        AssociatedSantanderPaymentByYearDTO result = associationProcessorService.processByYear(movements, year);
+        return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<SantanderPaymentMovementDTO> getMovementById(@PathVariable Long id) {
-        return ResponseEntity.ok(movementService.findById(id));
+    @Override
+    public ResponseEntity<List<SantanderPaymentMovementDTO>> getAllMovements() {
+        return ResponseEntity.ok(santanderPaymentMovementService.findAll());
     }
 
-    @PostMapping
-    public ResponseEntity<SantanderPaymentMovementDTO> createMovement(@RequestBody SantanderPaymentMovementDTO dto) {
-        SantanderPaymentMovementDTO savedMovement = movementService.save(dto);
-        return new ResponseEntity<>(savedMovement, HttpStatus.CREATED);
+    @Override
+    public ResponseEntity<SantanderPaymentMovementDTO> getMovementById(Long id) {
+        return ResponseEntity.ok(santanderPaymentMovementService.findById(id));
     }
 
-    @PostMapping("/saveAll")
-    public ResponseEntity<?> createMovementList(@RequestBody List<SantanderPaymentMovementDTO> dto) {
-        List<SantanderPaymentMovementDTO> savedMovementList = movementService.saveList(dto);
-        return new ResponseEntity<>(savedMovementList, HttpStatus.CREATED);
+    @Override
+    public ResponseEntity<SantanderPaymentMovementDTO> createMovement(SantanderPaymentMovementDTO dto) {
+        return new ResponseEntity<>(santanderPaymentMovementService.save(dto), HttpStatus.CREATED);
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<SantanderPaymentMovementDTO> updateMovement(
-            @PathVariable Long id,
-            @RequestBody SantanderPaymentMovementDTO dto) {
-        return ResponseEntity.ok(movementService.update(id, dto));
+    @Override
+    public ResponseEntity<?> createMovementList(List<SantanderPaymentMovementDTO> dtoList) {
+        return new ResponseEntity<>(santanderPaymentMovementService.saveList(dtoList), HttpStatus.CREATED);
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteMovement(@PathVariable Long id) {
-        movementService.delete(id);
+    @Override
+    public ResponseEntity<SantanderPaymentMovementDTO> updateMovement(Long id, SantanderPaymentMovementDTO dto) {
+        return ResponseEntity.ok(santanderPaymentMovementService.update(id, dto));
+    }
+
+    @Override
+    public ResponseEntity<Void> deleteMovement(Long id) {
+        santanderPaymentMovementService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }
