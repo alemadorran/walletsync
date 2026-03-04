@@ -3,6 +3,7 @@ package com.mymoney.walletsync.services.santander;
 import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
 import com.mymoney.walletsync.model.santander.entity.SantanderPaymentMovement;
 import com.mymoney.walletsync.repository.SantanderPaymentMovementRepository;
+import com.mymoney.walletsync.services.common.BankMovementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,7 +13,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class SantanderPaymentMovementService {
+public class SantanderPaymentMovementService implements BankMovementService<SantanderPaymentMovementDTO> {
 
     private final SantanderPaymentMovementRepository repository;
 
@@ -62,6 +63,11 @@ public class SantanderPaymentMovementService {
             throw new RuntimeException("No existe el movimiento con id: " + id);
         }
         repository.deleteById(id);
+    }
+
+    @Override
+    public List<SantanderPaymentMovementDTO> findByYear(Long year) {
+        return repository.findByYear(year).stream().map(this::convertToDTO).toList();
     }
 
     // --- Métodos de Mapeo ---
