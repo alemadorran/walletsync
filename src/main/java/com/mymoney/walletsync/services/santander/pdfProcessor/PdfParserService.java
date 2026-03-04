@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 public class PdfParserService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final Pattern DATE_PATTERN = Pattern.compile("^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/\\d{4}");
+    private static final Pattern DATE_PATTERN = Pattern.compile("(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/\\d{4}");
     private static final Pattern AMOUNT_PATTERN = Pattern.compile("(-?\\d+(?:\\.\\d{3})*,\\d{2})$");
 
     public List<SantanderPaymentMovementDTO> extractMovements(MultipartFile file) throws IOException {
@@ -45,8 +45,11 @@ public class PdfParserService {
                 String trimmedLine = line.trim();
 
                 // 1. FECHA
-                if (isDateFormat(trimmedLine)) {
-                    operationDateList.add(LocalDate.parse(trimmedLine, DATE_FORMATTER));
+                Matcher dateMatcher = DATE_PATTERN.matcher(trimmedLine);
+                if (dateMatcher.find()) {
+                    // group(0) contiene solo la parte que coincide (ej: "08/10/2025")
+                    String dateOnly = dateMatcher.group(0);
+                    operationDateList.add(LocalDate.parse(dateOnly, DATE_FORMATTER));
                 }
 
                 // 2. ETIQUETA/CONCEPTO
