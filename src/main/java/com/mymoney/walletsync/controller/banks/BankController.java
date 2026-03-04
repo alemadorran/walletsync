@@ -1,6 +1,5 @@
-package com.mymoney.walletsync.controller.common;
+package com.mymoney.walletsync.controller.banks;
 
-import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByYearDTO;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;

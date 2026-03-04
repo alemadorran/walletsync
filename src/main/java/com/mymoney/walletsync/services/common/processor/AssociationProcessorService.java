@@ -10,17 +10,16 @@ import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
 import com.mymoney.walletsync.services.common.CategoryService;
 import com.mymoney.walletsync.services.common.MovementCategoryAssociationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Month;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AssociationProcessorService {
 
     private final MovementCategoryAssociationService movementCategoryAssociationService;
@@ -29,175 +28,172 @@ public class AssociationProcessorService {
     private final String OTHERS_CATEGORY_EXPENSES = "OTHERS_EXPENSES";
     private final String OTHERS_CATEGORY_INCOMES = "OTHERS_INCOMES";
 
+    /**
+     * Proceso principal: Clasifica una lista de movimientos bancarios.
+     * Incluye medición de tiempo de ejecución para monitoreo de performance.
+     */
     public List<AssociatedSantanderPaymentDTO> process(List<SantanderPaymentMovementDTO> movements) {
+
+        if(movements.isEmpty()) {
+            log.debug("Sin movimientos para procesar.");
+            return Collections.emptyList();
+        }
+
+        long startTime = System.currentTimeMillis(); // Inicio del cronómetro
+        log.debug("Iniciando procesamiento de asociación para {} movimientos", movements.size());
 
         List<AssociatedSantanderPaymentDTO> listToReturn = new ArrayList<>();
 
-        initEmptyListToReturn(listToReturn);
+        try {
+            // Preparamos el contenedor con todas las categorías existentes
+            initEmptyListToReturn(listToReturn);
 
-        List<MovementAssociationDTO> categoryAssociationAll = movementCategoryAssociationService.findAll();
+            // Cargamos reglas de asociación
+            List<MovementAssociationDTO> categoryAssociationAll = movementCategoryAssociationService.findAll();
 
-        for (SantanderPaymentMovementDTO santanderPaymentMovementDTO : movements) {
+            for (SantanderPaymentMovementDTO movement : movements) {
+                MovementAssociationDTO association = checkIfCategoryAssociationFound(movement, categoryAssociationAll);
 
-            MovementAssociationDTO movementAssociationDTO = checkIfCategoryAssociationFound(santanderPaymentMovementDTO, categoryAssociationAll);
-
-            // We find a association
-            if (movementAssociationDTO != null) {
-
-                setCategoryToMovement(movementAssociationDTO, santanderPaymentMovementDTO, listToReturn);
-
-            } else { //We don't find an association
-
-                setCategoryOthersToMovement(santanderPaymentMovementDTO, listToReturn);
-
+                if (association != null) {
+                    setCategoryToMovement(association, movement, listToReturn);
+                } else {
+                    setCategoryOthersToMovement(movement, listToReturn);
+                }
             }
 
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            log.debug("Procesamiento completado exitosamente en {} ms", duration);
+
+        } catch (Exception e) {
+            log.error("Error inesperado durante el procesamiento de asociaciones: {}", e.getMessage(), e);
+            throw new RuntimeException("Error al procesar asociaciones de movimientos", e);
         }
 
         return listToReturn;
     }
 
-    private void setCategoryOthersToMovement(SantanderPaymentMovementDTO santanderPaymentMovementDTO,
+    /**
+     * Maneja movimientos que no encajan en ninguna regla conocida.
+     * Separa automáticamente entre Ingresos y Gastos "Otros".
+     */
+    private void setCategoryOthersToMovement(SantanderPaymentMovementDTO movement,
                                              List<AssociatedSantanderPaymentDTO> listToReturn) {
+        Optional<AssociatedSantanderPaymentDTO> associatedDTO;
+        CategoryType categoryTypeToAssign;
 
-        Optional<AssociatedSantanderPaymentDTO> associatedSantanderPaymentToProcess;
-
-        //INCOME or Expense
-        CategoryType categoryTypeToAssign = null;
-
-        if (santanderPaymentMovementDTO.amount().compareTo(BigDecimal.ZERO) > 0) {
-            categoryTypeToAssign =  CategoryType.INCOME;
-            associatedSantanderPaymentToProcess = listToReturn.stream()
-                    .filter(dto -> OTHERS_CATEGORY_INCOMES.equals(dto.getCategory().getCategoryName())
-                            && CategoryType.INCOME.toString().equals(dto.getCategory().getCategoryType()))
+        // Determinamos si es ingreso o gasto por el signo del importe
+        if (movement.amount().compareTo(BigDecimal.ZERO) > 0) {
+            categoryTypeToAssign = CategoryType.INCOME;
+            associatedDTO = listToReturn.stream()
+                    .filter(dto -> OTHERS_CATEGORY_INCOMES.equals(dto.getCategory().getCategoryName()))
                     .findFirst();
-        }else {
-            categoryTypeToAssign =  CategoryType.EXPENSE;
-            associatedSantanderPaymentToProcess = listToReturn.stream()
-                    .filter(dto -> OTHERS_CATEGORY_EXPENSES.equals(dto.getCategory().getCategoryName())
-                            && CategoryType.EXPENSE.toString().equals(dto.getCategory().getCategoryType()))
+        } else {
+            categoryTypeToAssign = CategoryType.EXPENSE;
+            associatedDTO = listToReturn.stream()
+                    .filter(dto -> OTHERS_CATEGORY_EXPENSES.equals(dto.getCategory().getCategoryName()))
                     .findFirst();
         }
 
-        if(associatedSantanderPaymentToProcess.isPresent()) {
+        if (associatedDTO.isPresent()) {
+            associatedDTO.get().getMovements().add(movement);
+        } else {
+            // Caso excepcional: La categoría "OTHERS" no existe en la DB, procedemos a crearla al vuelo
+            log.warn("Categoría por defecto '{}' no encontrada. Creándola en el sistema...",
+                    categoryTypeToAssign == CategoryType.INCOME ? OTHERS_CATEGORY_INCOMES : OTHERS_CATEGORY_EXPENSES);
 
-            associatedSantanderPaymentToProcess.get().getMovements().add(santanderPaymentMovementDTO);
-
-        }else {
-            final String categoryNameToSave = categoryTypeToAssign.toString().equals(CategoryType.EXPENSE.toString())
+            final String categoryNameToSave = (categoryTypeToAssign == CategoryType.EXPENSE)
                     ? OTHERS_CATEGORY_EXPENSES : OTHERS_CATEGORY_INCOMES;
 
-            //OTHERS category not found
-            //We have to create it
-            CategoryDTO saved = categoryService.save(new CategoryDTO(
-                    null,
-                    categoryNameToSave,
-                    categoryTypeToAssign.toString()
-            ));
-            if(saved == null) {
+            CategoryDTO saved = categoryService.save(new CategoryDTO(null, categoryNameToSave, categoryTypeToAssign.toString()));
+
+            if (saved == null) {
+                log.error("Fallo crítico: No se pudo crear la categoría de respaldo {}", categoryNameToSave);
                 throw new RuntimeException("Category OTHERS could not be saved");
             }
 
             CategoryDTO categoryDTO = categoryService.findById(saved.getId());
-            listToReturn.add(
-                    new AssociatedSantanderPaymentDTO(
-                            new ArrayList<SantanderPaymentMovementDTO>(),
-                            categoryDTO
-                    )
-            );
-
-            final CategoryType categoryTypeToAssignFinal =  categoryTypeToAssign;
-
-            Optional<AssociatedSantanderPaymentDTO> associatedSantanderPaymentOthers = listToReturn.stream()
-                    .filter(dto -> categoryNameToSave.equals(dto.getCategory().getCategoryName())
-                            && categoryTypeToAssignFinal.toString().equals(dto.getCategory().getCategoryType()))
-                    .findFirst();
-
-            if(associatedSantanderPaymentOthers.isPresent()) {
-                associatedSantanderPaymentOthers.get().getMovements().add(santanderPaymentMovementDTO);
-            }else {
-                throw new RuntimeException("Category OTHERS could not be saved and found");
-            }
+            AssociatedSantanderPaymentDTO newAssociated = new AssociatedSantanderPaymentDTO(new ArrayList<>(), categoryDTO);
+            newAssociated.getMovements().add(movement);
+            listToReturn.add(newAssociated);
         }
     }
 
-
-
-    private void setCategoryToMovement(MovementAssociationDTO movementAssociationDTO,
-                                       SantanderPaymentMovementDTO santanderPaymentMovementDTO,
+    /**
+     * Agrega el movimiento a la lista de la categoría que le corresponde.
+     */
+    private void setCategoryToMovement(MovementAssociationDTO association,
+                                       SantanderPaymentMovementDTO movement,
                                        List<AssociatedSantanderPaymentDTO> listToReturn) {
-
-        for (AssociatedSantanderPaymentDTO  associatedSantanderPaymentDTO : listToReturn) {
-            if(Objects.equals(
-                    associatedSantanderPaymentDTO.getCategory().getId(),
-                    movementAssociationDTO.getCategoryId())
-            ) {
-                associatedSantanderPaymentDTO.getMovements().add(santanderPaymentMovementDTO);
+        for (AssociatedSantanderPaymentDTO associated : listToReturn) {
+            if (Objects.equals(associated.getCategory().getId(), association.getCategoryId())) {
+                associated.getMovements().add(movement);
+                return; // Salimos una vez encontrado para evitar iteraciones innecesarias
             }
         }
-
     }
 
+    /**
+     * Inicializa la lista de retorno con todas las categorías disponibles en el sistema (vacías).
+     */
     private void initEmptyListToReturn(List<AssociatedSantanderPaymentDTO> listToReturn) {
-
+        log.debug("Inicializando contenedores para todas las categorías disponibles.");
         List<CategoryDTO> categoriesAll = categoryService.findAll();
-        for(CategoryDTO categoryDTO : categoriesAll) {
-
-            listToReturn.add(new AssociatedSantanderPaymentDTO(
-                    new ArrayList<SantanderPaymentMovementDTO>(),
-                    categoryDTO
-            ));
+        for (CategoryDTO categoryDTO : categoriesAll) {
+            listToReturn.add(new AssociatedSantanderPaymentDTO(new ArrayList<>(), categoryDTO));
         }
-
     }
 
-    private MovementAssociationDTO checkIfCategoryAssociationFound(SantanderPaymentMovementDTO santanderPaymentMovementDTO,
-                                                 List<MovementAssociationDTO> categoryAssociationAll) {
+    /**
+     * Lógica de matching: Comprueba si el texto del movimiento contiene la palabra clave de asociación.
+     */
+    private MovementAssociationDTO checkIfCategoryAssociationFound(SantanderPaymentMovementDTO movement,
+                                                                   List<MovementAssociationDTO> associations) {
+        String label = movement.operationLabel().toUpperCase();
 
-        for (MovementAssociationDTO movementAssociationDTO : categoryAssociationAll) {
-            String firstElement = santanderPaymentMovementDTO.operationLabel().toUpperCase();
-            String secondElement = movementAssociationDTO.getAssociationWord().toUpperCase();
-
-            if(firstElement.contains(secondElement)){
-                return movementAssociationDTO;
+        for (MovementAssociationDTO association : associations) {
+            String keyword = association.getAssociationWord().toUpperCase();
+            if (label.contains(keyword)) {
+                return association;
             }
         }
         return null;
-
     }
 
-
+    /**
+     * Genera un reporte anual agrupando los movimientos por meses.
+     */
     public AssociatedSantanderPaymentByYearDTO processByYear(List<SantanderPaymentMovementDTO> movements, Long year) {
+        log.debug("Generando reporte anual para el año: {}", year);
+        long startTime = System.currentTimeMillis();
+        List<AssociatedSantanderPaymentByMonthDTO> monthlyReports = new ArrayList<>();
 
-        List<AssociatedSantanderPaymentByMonthDTO> associatedSantanderPaymentByMonthDTOS = new ArrayList<>();
+        for (Month month : Month.values()) {
+            List<SantanderPaymentMovementDTO> movementsOfMonth = getPaymentsByMonth(month, movements);
 
-        Month[] values = Month.values();
+            log.debug("Mes {}: Encontrados {} movimientos", month, movementsOfMonth.size());
 
-        for(Month month : values) {
-
-            associatedSantanderPaymentByMonthDTOS.add(new AssociatedSantanderPaymentByMonthDTO(
+            monthlyReports.add(new AssociatedSantanderPaymentByMonthDTO(
                     month.getValue(),
-                    getPaymentsByMonth(month, movements)
+                    process(movementsOfMonth) // Reutilizamos la lógica de asociación por categoría
             ));
-
         }
-
-        return new AssociatedSantanderPaymentByYearDTO(
-                year,
-                associatedSantanderPaymentByMonthDTOS
-        );
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        log.debug("Reporte anual generado para el año: {}. En {} ms", year, duration);
+        return new AssociatedSantanderPaymentByYearDTO(year, monthlyReports);
     }
 
-    private List<AssociatedSantanderPaymentDTO> getPaymentsByMonth(Month month, List<SantanderPaymentMovementDTO> movements) {
-
-        List<SantanderPaymentMovementDTO> movementsToProcess = new ArrayList<>();
-
-        for (SantanderPaymentMovementDTO santanderPaymentMovementDTO : movements) {
-            if(santanderPaymentMovementDTO.operationDate().getMonth().equals(month)) {
-                movementsToProcess.add(santanderPaymentMovementDTO);
+    /**
+     * Filtra una lista de movimientos quedándose solo con los de un mes específico.
+     */
+    private List<SantanderPaymentMovementDTO> getPaymentsByMonth(Month month, List<SantanderPaymentMovementDTO> movements) {
+        List<SantanderPaymentMovementDTO> filtered = new ArrayList<>();
+        for (SantanderPaymentMovementDTO m : movements) {
+            if (m.operationDate().getMonth().equals(month)) {
+                filtered.add(m);
             }
         }
-
-        return process(movementsToProcess);
+        return filtered;
     }
 }

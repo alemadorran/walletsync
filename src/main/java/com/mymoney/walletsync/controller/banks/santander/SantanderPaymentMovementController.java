@@ -1,12 +1,11 @@
-package com.mymoney.walletsync.controller.santander;
+package com.mymoney.walletsync.controller.banks.santander;
 
-import com.mymoney.walletsync.controller.common.BankController;
+import com.mymoney.walletsync.controller.banks.BankController;
 import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByYearDTO;
 import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentDTO;
 import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
 import com.mymoney.walletsync.services.common.BankMovementService;
 import com.mymoney.walletsync.services.common.processor.AssociationProcessorService;
-import com.mymoney.walletsync.services.santander.SantanderPaymentMovementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
