@@ -18,6 +18,7 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
     private final SantanderPaymentMovementRepository repository;
 
     @Transactional(readOnly = true)
+    @Override
     public List<SantanderPaymentMovementDTO> findAll() {
         return repository.findAll().stream()
                 .map(this::convertToDTO)
@@ -25,6 +26,7 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
     }
 
     @Transactional(readOnly = true)
+    @Override
     public SantanderPaymentMovementDTO findById(Long id) {
         return repository.findById(id)
                 .map(this::convertToDTO)
@@ -32,12 +34,14 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
     }
 
     @Transactional
+    @Override
     public SantanderPaymentMovementDTO save(SantanderPaymentMovementDTO dto) {
         SantanderPaymentMovement entity = convertToEntity(dto);
         return convertToDTO(repository.save(entity));
     }
 
     @Transactional
+    @Override
     public List<SantanderPaymentMovementDTO> saveList(List<SantanderPaymentMovementDTO> dto) {
         List<SantanderPaymentMovementDTO> listToReturn = new ArrayList<>();
         for (SantanderPaymentMovementDTO dtoToSave : dto) {
@@ -47,6 +51,7 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
     }
 
     @Transactional
+    @Override
     public SantanderPaymentMovementDTO update(Long id, SantanderPaymentMovementDTO dto) {
         return repository.findById(id).map(existing -> {
             existing.setOperationDate(dto.operationDate());
@@ -58,6 +63,7 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
     }
 
     @Transactional
+    @Override
     public void delete(Long id) {
         if (!repository.existsById(id)) {
             throw new RuntimeException("No existe el movimiento con id: " + id);
@@ -65,9 +71,22 @@ public class SantanderPaymentMovementService implements BankMovementService<Sant
         repository.deleteById(id);
     }
 
+    @Transactional
     @Override
     public List<SantanderPaymentMovementDTO> findByYear(Long year) {
         return repository.findByYear(year).stream().map(this::convertToDTO).toList();
+    }
+
+    @Transactional
+    @Override
+    public List<SantanderPaymentMovementDTO> findExpensesByYear(Long year) {
+        return repository.findExpensesByYear(year).stream().map(this::convertToDTO).toList();
+    }
+
+    @Transactional
+    @Override
+    public List<SantanderPaymentMovementDTO> findIncomesByYear(Long year) {
+        return repository.findIncomesByYear(year).stream().map(this::convertToDTO).toList();
     }
 
     // --- Métodos de Mapeo ---

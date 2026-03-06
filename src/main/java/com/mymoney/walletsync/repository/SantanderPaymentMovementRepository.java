@@ -15,4 +15,12 @@ public interface SantanderPaymentMovementRepository extends JpaRepository<Santan
             nativeQuery = true)
     List<SantanderPaymentMovement> findByYear(@Param("year") Long year);
 
+    @Query(value = "SELECT * FROM santander_payment_movements WHERE DATE_PART('year', operation_date) = :year AND amount < 0",
+            nativeQuery = true)
+    List<SantanderPaymentMovement> findExpensesByYear(@Param("year") Long year);
+
+    @Query(value = "SELECT * FROM santander_payment_movements WHERE DATE_PART('year', operation_date) = :year AND amount > 0",
+            nativeQuery = true)
+    List<SantanderPaymentMovement> findIncomesByYear(@Param("year") Long year);
+
 }
