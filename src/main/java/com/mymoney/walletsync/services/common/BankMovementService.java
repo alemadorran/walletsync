@@ -1,5 +1,7 @@
 package com.mymoney.walletsync.services.common;
 
+import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
+
 import java.util.List;
 
 /**
@@ -21,4 +23,8 @@ public interface BankMovementService<T> {
     void delete(Long id);
 
     List<T> findByYear(Long year);
+
+    List<SantanderPaymentMovementDTO> findExpensesByYear(Long year);
+
+    List<SantanderPaymentMovementDTO> findIncomesByYear(Long year);
 }

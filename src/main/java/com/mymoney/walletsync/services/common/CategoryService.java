@@ -30,6 +30,12 @@ public class CategoryService {
         return convertToDTO(category);
     }
 
+    public List<CategoryDTO> findByCategoryType(CategoryType categoryType) {
+        return categoryRepository.findByCategoryType(categoryType).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public CategoryDTO save(CategoryDTO dto) {
         Category category = new Category();

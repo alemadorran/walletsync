@@ -3,10 +3,7 @@ package com.mymoney.walletsync.services.common.processor;
 import com.mymoney.walletsync.model.common.dto.CategoryDTO;
 import com.mymoney.walletsync.model.common.dto.MovementAssociationDTO;
 import com.mymoney.walletsync.model.common.enums.CategoryType;
-import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByMonthDTO;
-import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentByYearDTO;
-import com.mymoney.walletsync.model.santander.dto.AssociatedSantanderPaymentDTO;
-import com.mymoney.walletsync.model.santander.dto.SantanderPaymentMovementDTO;
+import com.mymoney.walletsync.model.santander.dto.*;
 import com.mymoney.walletsync.services.common.CategoryService;
 import com.mymoney.walletsync.services.common.MovementCategoryAssociationService;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +29,7 @@ public class AssociationProcessorService {
      * Proceso principal: Clasifica una lista de movimientos bancarios.
      * Incluye medición de tiempo de ejecución para monitoreo de performance.
      */
-    public List<AssociatedSantanderPaymentDTO> process(List<SantanderPaymentMovementDTO> movements) {
+    public List<AssociatedSantanderPaymentDTO> process(List<SantanderPaymentMovementDTO> movements, CategoryType categoryType) {
 
         if(movements.isEmpty()) {
             log.debug("Sin movimientos para procesar.");
@@ -45,8 +42,9 @@ public class AssociationProcessorService {
         List<AssociatedSantanderPaymentDTO> listToReturn = new ArrayList<>();
 
         try {
+
             // Preparamos el contenedor con todas las categorías existentes
-            initEmptyListToReturn(listToReturn);
+            initEmptyListToReturn(listToReturn, categoryType);
 
             // Cargamos reglas de asociación
             List<MovementAssociationDTO> categoryAssociationAll = movementCategoryAssociationService.findAll();
@@ -136,9 +134,17 @@ public class AssociationProcessorService {
     /**
      * Inicializa la lista de retorno con todas las categorías disponibles en el sistema (vacías).
      */
-    private void initEmptyListToReturn(List<AssociatedSantanderPaymentDTO> listToReturn) {
+    private void initEmptyListToReturn(List<AssociatedSantanderPaymentDTO> listToReturn, CategoryType categoryType) {
         log.debug("Inicializando contenedores para todas las categorías disponibles.");
-        List<CategoryDTO> categoriesAll = categoryService.findAll();
+
+        List<CategoryDTO> categoriesAll;
+
+        if(categoryType==null){
+            categoriesAll = categoryService.findAll();
+        } else {
+            categoriesAll = categoryService.findByCategoryType(categoryType);
+        }
+
         for (CategoryDTO categoryDTO : categoriesAll) {
             listToReturn.add(new AssociatedSantanderPaymentDTO(new ArrayList<>(), categoryDTO));
         }
@@ -163,7 +169,7 @@ public class AssociationProcessorService {
     /**
      * Genera un reporte anual agrupando los movimientos por meses.
      */
-    public AssociatedSantanderPaymentByYearDTO processByYear(List<SantanderPaymentMovementDTO> movements, Long year) {
+    public AssociatedSantanderPaymentByYearDTO processByYear(List<SantanderPaymentMovementDTO> movements, Long year, CategoryType categoryType) {
         log.debug("Generando reporte anual para el año: {}", year);
         long startTime = System.currentTimeMillis();
         List<AssociatedSantanderPaymentByMonthDTO> monthlyReports = new ArrayList<>();
@@ -175,7 +181,7 @@ public class AssociationProcessorService {
 
             monthlyReports.add(new AssociatedSantanderPaymentByMonthDTO(
                     month.getValue(),
-                    process(movementsOfMonth) // Reutilizamos la lógica de asociación por categoría
+                    process(movementsOfMonth, categoryType) // Reutilizamos la lógica de asociación por categoría
             ));
         }
         long endTime = System.currentTimeMillis();
@@ -195,5 +201,64 @@ public class AssociationProcessorService {
             }
         }
         return filtered;
+    }
+
+    public YearReportDTO processReportByYear(List<SantanderPaymentMovementDTO> movements, Long year, CategoryType categoryType) {
+
+        List<CategoryAmountDTO> totalAmountByCategoriesDTOS;
+
+        YearReportDTO yearReportDTO = new YearReportDTO();
+        yearReportDTO.setYear(year);
+        yearReportDTO.setCategoryType(categoryType);
+
+        AssociatedSantanderPaymentByYearDTO associatedSantanderPaymentByYearDTO = processByYear(movements, year, categoryType);
+
+        totalAmountByCategoriesDTOS = transformToReport(associatedSantanderPaymentByYearDTO);
+
+
+        yearReportDTO.setTotalAmountByCategoriesDTOS(totalAmountByCategoriesDTOS);
+        return yearReportDTO;
+    }
+
+    private List<CategoryAmountDTO> transformToReport(AssociatedSantanderPaymentByYearDTO associatedSantanderPaymentByYearDTO) {
+        // 1. Usamos un Map para acumular los totales por categoría (Clave: Nombre, Valor: Suma)
+        Map<String, BigDecimal> categoriesAmountMap = new HashMap<>();
+
+        // 2. Recorremos los meses del año
+        for (AssociatedSantanderPaymentByMonthDTO monthDTO : associatedSantanderPaymentByYearDTO.getAssociatedSantanderPaymentByMonthDTOS()) {
+
+            // 3. Recorremos los pagos de cada mes
+            for (AssociatedSantanderPaymentDTO paymentDTO : monthDTO.getAssociatedSantanderPaymentDTOS()) {
+
+                // Calculamos el total de los movimientos de este pago específico
+                BigDecimal currentPaymentTotal = BigDecimal.ZERO;
+                for (SantanderPaymentMovementDTO movement : paymentDTO.getMovements()) {
+                    // Verificamos que el importe no sea nulo antes de sumar
+                    if (movement.amount() != null) {
+                        currentPaymentTotal = currentPaymentTotal.add(movement.amount());
+                    }
+                }
+
+                // 4. Actualizamos el mapa de categorías
+                String categoryName = paymentDTO.getCategory().getCategoryName();
+
+                // Si la categoría ya existe, sumamos al valor actual; si no, empezamos de cero
+                BigDecimal existingTotal = categoriesAmountMap.getOrDefault(categoryName, BigDecimal.ZERO);
+                categoriesAmountMap.put(categoryName, existingTotal.add(currentPaymentTotal));
+            }
+        }
+
+        // 5. Transformamos el Mapa resultante en la lista de DTOs final
+        List<CategoryAmountDTO> categoryAmountDTOS = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> entry : categoriesAmountMap.entrySet()) {
+            categoryAmountDTOS.add(
+                    new CategoryAmountDTO(
+                            entry.getKey(),   // Nombre de la categoría
+                            entry.getValue()  // Suma total calculada
+                    )
+            );
+        }
+
+        return categoryAmountDTOS;
     }
 }
