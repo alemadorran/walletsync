@@ -69,6 +69,18 @@ public class PdfParserService {
                         if (matcher.find()) {
                             operationAmountList.add(cleanAndParse(matcher.group(1)));
                             operationBalanceList.add(cleanAndParse(partes[1].trim()));
+
+                            //Verificamos que se mantenga una coherencia en la lista
+                            int size = operationDateList.size();
+                            if(!(size == operationLabelList.size() && size == operationAmountList.size() && size == operationBalanceList.size())){
+                                log.warn("Incoherencia detectada");
+                                log.debug(operationDateList.getLast().toString());
+                                log.debug(operationLabelList.getLast());
+                                log.debug(operationAmountList.getLast().toString());
+                                log.debug(operationBalanceList.getLast().toString());
+                                throw new RuntimeException("Error en el procesamiento de PDF");
+                            }
+
                         } else {
                             log.warn("Se encontró 'EUR' pero el patrón de importe falló en la línea: {}", trimmedLine);
                         }
@@ -102,7 +114,22 @@ public class PdfParserService {
             }
             log.info("Sincronización exitosa: {} movimientos listos para guardar.", movements.size());
         } else {
-            log.error("DESINCRONIZACIÓN DETECTADA: Las listas tienen tamaños diferentes. No se pueden emparejar los datos.");
+            // --- BLOQUE DE ERROR CON LOGS DETALLADOS ---
+            log.error("DESINCRONIZACIÓN DETECTADA en el PDF: {}", file.getOriginalFilename());
+            log.error("Tamaños actuales -> Fechas: {}, Etiquetas: {}, Importes: {}, Saldos: {}",
+                    operationDateList.size(), operationLabelList.size(),
+                    operationAmountList.size(), operationBalanceList.size());
+
+            log.debug("--- DETALLE DE LISTAS PARA DEPURACIÓN ---");
+            log.debug("Fechas encontradas: {}", operationDateList);
+            log.debug("Etiquetas encontradas: {}", operationLabelList);
+            log.debug("Importes encontrados: {}", operationAmountList);
+            log.debug("Saldos encontrados: {}", operationBalanceList);
+
+            // Opcional: Loguear las líneas si necesitas ver qué faltó exactamente
+            log.warn("Revisa si hay conceptos que no contienen 'Compra', 'Bizum', etc., o si hay importes mal formateados.");
+
+            throw new RuntimeException("Error de sincronización: Los datos extraídos del PDF no son coherentes.");
         }
 
         return movements;
